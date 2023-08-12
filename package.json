@@ -1,0 +1,19 @@
+{
+  "name": "api-hub-searchtag",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon ./src/app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "firebase-admin": "^11.10.1",
+    "nodemon": "^3.0.1",
+    "puppeteer": "^21.0.2"
+  }
+}
