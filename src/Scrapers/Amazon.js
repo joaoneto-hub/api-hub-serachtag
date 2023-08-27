@@ -1,70 +1,95 @@
 const puppeteer = require('puppeteer');
+const categories  = require("../config/AmazonConfig");
+const db = require('../firebase/firebaseConect')
+const fs = require('fs');
 
-async function scrapeAmazon(searchQuery, numPages = 1) {
+async function scrapeAmazonProductDetails(url) {
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
 
   try {
-    // Navegar para a página da Amazon
-    await page.goto('https://www.amazon.com.br/', { waitUntil: 'domcontentloaded' });
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    // Localizar o campo de busca, digitar o valor de pesquisa e clicar no botão de pesquisa
-    await page.type('#twotabsearchtextbox', searchQuery);
-    await page.click('.nav-search-submit .nav-input');
+    await page.waitForTimeout(2000);
 
-    // Aguardar a página de resultados carregar completamente
-    await page.waitForTimeout(2000); // Aguardar 2 segundos
+    const productResults = await page.evaluate(() => {
+      const items = document.querySelectorAll('.s-result-item');
 
-    let results = [];
+      const data = [];
+      items.forEach((item) => {
+        const titleElement = item.querySelector('h2 a span');
+        const priceElement = item.querySelector('.a-price .a-offscreen');
+        const reviewCountElement = item.querySelector('.a-size-base.a-link-normal');
+        const linkElement = item.querySelector('h2 a');
 
-    for (let currentPage = 1; currentPage <= numPages; currentPage++) {
-      // Extrair informações dos resultados da pesquisa na página atual
-      const pageResults = await page.evaluate(() => {
-        const items = document.querySelectorAll('.s-result-item');
+        const title = titleElement ? titleElement.innerText : 'N/A';
+        const price = priceElement ? priceElement.innerText : 'N/A';
+        const reviewCount = reviewCountElement ? reviewCountElement.innerText : 'N/A';
+        const link = linkElement ? linkElement.href : 'N/A';
 
-        const data = [];
-        items.forEach((item) => {
-          const titleElement = item.querySelector('h2 a span');
-          const priceElement = item.querySelector('.a-price .a-offscreen');
-          const reviewCountElement = item.querySelector('.a-link-normal .a-size-base');
-          const linkElement = item.querySelector('h2 a');
-
-          // Verificar se os elementos existem antes de acessar suas propriedades
-          const title = titleElement ? titleElement.innerText : 'N/A';
-          const price = priceElement ? priceElement.innerText : 'N/A';
-
-          const reviewCount = reviewCountElement ? reviewCountElement.innerText : 'N/A';
-          const link = linkElement ? linkElement.href : 'N/A';
-
-          data.push({ title, price, reviewCount, link });
-        });
-
-        return data;
+        data.push({ title, price, reviewCount, link });
       });
 
-      results = results.concat(pageResults);
+      return data;
+    });
 
-      // Clicar na página "Próxima" (se houver) para avançar para a próxima página
-      const nextPageSelector = '.s-pagination-next';
-      const nextPageButton = await page.$(nextPageSelector);
-      if (nextPageButton && currentPage < numPages) {
-        await nextPageButton.click();
-        await page.waitForTimeout(2000); // Aguardar 2 segundos para carregar a próxima página
-      }
-    }
-    return results;
+    return productResults;
   } catch (err) {
     console.error('Ocorreu um erro:', err);
   } finally {
-    // Fechar o navegador
     await browser.close();
   }
 }
+async function main() {
+  const allResults = [];
 
-// Substitua 'smartphone' pelo valor da pesquisa que você deseja
-const searchQuery = 'alexa';
+  for (const category of categories) {
+    const productResults = await scrapeAmazonProductDetails(category.url);
+    allResults.push({ category: category.description, products: productResults });
+  }
 
-// Defina o número de páginas que deseja acessar (exemplo: 3 páginas)
-const numPages = 3;
+  const today = new Date();
+  const collectionName = today.toISOString().slice(0, 10); // Formato YYYY-MM-DD
 
-module.exports = scrapeAmazon;
+  const collectionRef = db.collection(collectionName);
+
+ for (const result of allResults) {
+  const categoryDocRef = collectionRef.doc(result.category);
+
+  const categoryData = {};
+
+  for (const product of result.products) {
+    const productKey = `product_${Math.random().toString(36).substring(7)}`;
+
+    categoryData[productKey] = {
+      Store: "Amazon",
+      title: product.title,
+      price: product.price,
+      reviewCount: product.reviewCount,
+      link: product.link,
+      date: new Date()
+    };
+  }
+
+  try {
+    await categoryDocRef.set(categoryData, { merge: true });
+  } catch (error) {
+    console.error('Erro ao salvar produtos:', error);
+  }
+}
+
+console.log('Dados salvos com sucesso no Firestore.');
+}
+
+main().catch((err) => {
+  const errorMessage = `Erro ao raspar Kabum: ${err}\n`;
+
+  // Gravar o erro no arquivo de log
+  fs.appendFile('error.log', errorMessage, (error) => {
+    if (error) {
+      console.error('Erro ao gravar no arquivo de log:', error);
+    }
+  });
+
+  console.error(errorMessage);
+});

@@ -1,39 +1,30 @@
 const express = require('express');
-const scrapeAmazon = require("../Scrapers/Amazon");
-const scrapeKabum = require("../Scrapers/Kabun");
+const db = require('../firebase/firebaseConect');
 
 const router = express.Router();
 
-router.get('/api/scrape/amazon', async (req, res) => {
-  const { searchQuery, numPages } = req.query;
-
-  if (!searchQuery) {
-    return res.status(400).json({ error: 'Informe o produto para a pesquisa.' });
-  }
+router.get('/products/:data/:categoria', async (req, res) => {
+  const data = req.params.data;
+  const categoria = req.params.categoria;
 
   try {
-    const results = await scrapeAmazon(searchQuery, numPages || 1);
-    res.json(results);
-  } catch (err) {
-    console.error('Ocorreu um erro ao fazer web scraping da Amazon:', err);
-    res.status(500).json({ error: 'Ocorreu um erro ao fazer web scraping.' });
+    const collectionRef = db.collection(data);
+    const categoryDocRef = collectionRef.doc(categoria);
+
+    const categoryDoc = await categoryDocRef.get();
+
+    if (!categoryDoc.exists) {
+      return res.status(404).json({ error: "Categoria não encontrada" });
+    }
+
+    const categoryData = categoryDoc.data();
+
+    res.status(200).json(categoryData);
+  } catch (error) {
+    console.error('Erro ao buscar produtos:', error);
+    res.status(500).send({ error: "Erro ao buscar produtos" });
   }
 });
 
-router.get('/api/scrape/kabun', async (req, res) => {
-  const { searchQuery, numPages } = req.query;
-
-  if (!searchQuery) {
-    return res.status(400).json({ error: 'Informe o produto para a pesquisa.' });
-  }
-
-  try {
-    const results = await scrapeKabum(searchQuery, numPages || 1);
-    res.json(results);
-  } catch (err) {
-    console.error('Ocorreu um erro ao fazer web scraping na kabun :', err);
-    res.status(500).json({ error: 'Ocorreu um erro ao fazer web scraping.' });
-  }
-});
 
 module.exports = router;
